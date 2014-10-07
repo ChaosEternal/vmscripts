@@ -1,0 +1,17 @@
+#!/usr/bin/guile
+!#
+(use-modules (scsh syntax)
+	     (scsh glob))
+(define REPO "/home/chaos/kVMs")
+
+(for-each (lambda (pidfile)
+	    (if (eq? 0 (run (fuser ,pidfile) (> 1 "/dev/null") (> 2 "/dev/null")))
+		(begin (display (string-append pidfile ": "))
+		       (run (cat ,pidfile)))))
+	  (glob* (string-append REPO "/*/kvm.pid")))
+
+;; #!/bin/bash
+;; REPO=/home/chaos/kVMs
+;; echo the following vm is running:
+;; find $REPO -type d -exec sh -c 'fuser {}/kvm.pid 2>/dev/null 1>/dev/null' \;  -print
+;
