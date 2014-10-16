@@ -1,3 +1,5 @@
+#!/usr/bin/guile
+!#
 (use-modules 
  (scsh scsh)
  (scsh syntax)
@@ -5,8 +7,10 @@
  (srfi srfi-8)
  (rnrs lists)
  (ice-9 match)
+ (ice-9 getopt-long)
  (ice-9 pretty-print)
  (srfi srfi-11))
+
 
 
 (define guile-magic "#!/usr/bin/guile
@@ -52,40 +56,63 @@
       xvmdef
       )))
 
-(define (xvmdef hda-name macaddr memsize vmisopath)
+(define (xvmdef hda-name macaddr memsize vmisopath vmuuid vmname)
   "the trunk used to define vm parameters in generated startvm.scm"
-  `(define vmdef
-     '((M pc)
-;       (S)
-       (cpu kvm64)
-       (daemonize)
-       (pidfile "kvm.pid")
-       (drive ((file ,hda-name)
-	       (index 0)
-	       (if ide)
-	       (media disk)))
-       (net ((tap)
-	     (ifname tap0)
-	     (script /bin/true)))
-       (net ((nic)
-	     (macaddr ,macaddr)))
-       (m ,memsize)
-       (vnc "unix:vncsock,server")
-       (chardev (
-		 (socket)
-		 (id mnt1)
-		 (nowait)
-		 (path mntrsock)
-		 (server)))
-       (mon ((chardev mnt1)
-	     (mode readline)))
-       (usb)
-       (usbdevice tablet)
-       (drive ((file ,vmisopath)
-	       (index 1)
-	       (if ide)
-	       (media cdrom)))
-       ))
+  (let ((nicname (string-append "hst-nic-" vmname))
+	(cdrom (if vmisopath `((drive ((file ,vmisopath)
+					(index 1)
+					(if ide)
+					(media cdrom))))
+		   '()
+		   )))
+   `(define vmdef
+      '((M pc)
+	(cpu kvm64)
+	(uuid ,vmuuid)
+	(daemonize)
+	(pidfile "kvm.pid")
+	(drive ((file ,hda-name)
+		(index 0)
+		(if ide)
+		(media disk)))
+	(net ((tap)
+	      ;; (ifname ,nicname)
+	      ;; (script no)
+	      (helper /usr/lib/qemu/qemu-bridge-helper)
+	      ))
+	(net ((nic)
+	      (macaddr ,macaddr)))
+	(m ,memsize)
+	(vnc "unix:vncsock,server")
+	(chardev (
+		  (socket)
+		  (id mnt1)
+		  (nowait)
+		  (path mntrsock)
+		  (server)))
+	(mon ((chardev mnt1)
+	      (mode readline)))
+	(chardev (
+		  (socket)
+		  (id mnt2)
+		  (nowait)
+		  (path qmpsock)
+		  (server)))
+	(mon ((chardev mnt2)
+	      (mode control)))
+	(chardev (
+		  (socket)
+		  (id mnt3)
+		  (nowait)
+		  (path serialsock)
+		  (server)))
+	(serial "chardev:mnt3"
+	      )
+
+	(usb)
+	(usbdevice tablet)
+	,@cdrom
+	)))
   )
 
 
@@ -111,103 +138,158 @@
 (define (zenity zdef)
   `(zenity ,@(optbuilder* zdef)))
 
-(setenv "WINDOWID" "0")
+(define (createvm repo vmname uuid memsize disksize disktype diskonly vmisopath)
 
-(run (,@
-      (zenity 
-       `((info) 
-	 (text 
-	  "Welcome Using Chaos Eternal's KVM creation utilities")
-	 (title Welcome)))))
+  
+  (random 255 (random-state-from-platform ))
 
-(random 255 (random-state-from-platform ))
+  (let ((repo repo)
+	(macaddr (string-join 
+		  (cons "00" 
+			(map 
+			 (lambda (x) 
+			   (format #f "~X" (random 255 ))) 
+			 (iota 5))) 
+		  ":")))
+    (&& (test "!" -d ,repo)
+	(begin (run (mkdir "-p" repo))
+	       (run (mkdir ,(string-join (list repo "vde1") "/")))))
+    
 
-(let ((repo (receive 
-		(status p1 p2)
-		(run/collecting 
-		 (1 2) 
-		 (,@(zenity 
-		     '((file-selection)
-		       (title "Choose Repository")
-		       (directory)
-		       (text 
-			"Choose a directory to hold the repository")))))
-	      (if (> status 0)
-		  (throw 'user-cancel)
-		  (car (port->string-list p1)))))
-      (macaddr (string-join 
-		(cons "00" 
-		      (map 
-		       (lambda (x) 
-			 (format #f "~X" (random 255 ))) 
-		       (iota 5))) 
-		":")))
-  (&& (test "!" -d ,repo)
-      (begin (run (mkdir "-p" repo))
-	     (run (mkdir ,(string-join (list repo "vde1") "/")))))
-  (with-cwd 
-   repo
-   (let-values 
-       (
-	((vmname memsize disksize disktype)
-	 [receive (status p1)
-	     (run/collecting 
-	      (1 2)
-	      (,@(zenity 
-		  '((forms)
-		    (title "Create Virtual Machine")
-		    (text "Input the following Definitions")
-		    (add-entry "VM Name")
-		    (add-entry "Memory Size")
-		    (add-entry "Disk Size")
-		    (add-list "Disk Type")
-		    (list-values "qcow2|raw")
-		    (column-values "QCow2")
-		    (separator "\n")))))
-	   (if (> status 0)
-	       (throw 'user-cancel)
-	       (apply values (port->string-list p1)))])
-	((vmisopath)
-	 [receive (status p1)
-	     (run/collecting
-	      (1 2)
-	      (,@(zenity
-		  '((file-selection)
-		    (title "Choose a boot iso image, \
-Cancel to create vm with out a boot iso")
-		    ))))
-	   (if (> status 0)
-	       "/dev/null"
-	       (values (car (port->string-list p1))))])
-	)
-     (let* ((vmpath (string-append repo "/" vmname))
-	    (script-path (string-append vmpath "/startvm.scm"))
-	    (hda-name "hda.img")
-	    (hda-path (string-append vmpath "/" hda-name))
-	    ;(script-port (open-file script-path "w"))
-	    )
-       (if (> (run (mkdir ,vmpath)) 0)
-	   (throw `repo-exists))
-       (run (qemu-img create -f ,disktype ,hda-path ,disksize))
-       (with-output-to-file 
-	   script-path
-	 (lambda () 
-	   (display guile-magic)
-	   (pretty-print (modulesuse))
-	   (pretty-print (xkvmf))
-	   (pretty-print (xvmdef hda-name macaddr memsize vmisopath))
-	   (pretty-print '(setenv "LD_PRELOAD"
-				  "/usr/lib/vde2/libvdetap.so"))
-	   (pretty-print '(setenv "tap0"
-				  "../vde1"))
-	   (pretty-print '(with-cwd 
-			   (dirname 
-			    (car (command-line)))
-			   (let ()
-			     (run (kvm ,@(kvm vmdef)))
-			     (run (ssvncviewer ./vncsock))
-			     )
-			   )
-			 )))
-     ;(list repo vmname memsize disksize disktype vmisopath)
-       ))))
+    (with-cwd 
+     repo
+     (let-values 
+	 (
+	  ((vmname memsize disksize disktype)
+	   (values vmname memsize disksize disktype))
+	  ((vmisopath)
+	   (values vmisopath))
+	  )
+       (let* ((vmpath (string-append repo "/" vmname))
+	      (script-path (string-append vmpath "/startvm.scm"))
+	      (hda-name "hda.img")
+	      (hda-path (string-append vmpath "/" hda-name))
+					;(script-port (open-file script-path "w"))
+	      (vmuuid (if uuid uuid (car (run/strings (uuidgen)))))
+	      )
+	 (if (> (run (mkdir ,vmpath)) 0)
+	     (throw `repo-exists))
+	 (run (qemu-img create -f ,disktype ,hda-path ,disksize))
+	 (with-output-to-file 
+	     script-path
+	   (lambda () 
+	     (display guile-magic)
+	     (pretty-print (modulesuse))
+	     (pretty-print (xkvmf))
+	     (pretty-print (xvmdef hda-name macaddr memsize vmisopath vmuuid vmname))
+	     (if (not diskonly)
+		 (pretty-print '(with-cwd 
+				 (dirname 
+				  (car (command-line)))
+				 (let ()
+				   (run (qemu-system-x86_64 ,@(kvm vmdef)))
+				   (run (ssvncviewer ./vncsock))
+				   )
+				 )
+			       ))))
+					;(list repo vmname memsize disksize disktype vmisopath)
+	 ))))
+  )
+
+(define (parse-args)
+  (define option-spec 
+    '((version (value #f))
+      (help (value #f))
+      (repo (single-char #\r) (value #t))
+      (name (single-char #\n) (value #t))
+      (uuid (single-char #\U) (value #t))
+      (memory-size (single-char #\m) (value #t))
+      (disk-only (value #f))
+      (disk-size (single-char #\d) (value #t))
+      (disk-type (value #t))
+      (iso-path (value #t))
+      ))
+
+  (define options (getopt-long (command-line) option-spec))
+  (let  ([help-wanted (option-ref options 'help #f)]
+  	[version-wanted (option-ref options 'version #f)]
+  	[repo (option-ref options 'repo (string-append (getenv "HOME") "/kVMs"))]
+  	[name (option-ref options 'name #f)]
+	[uuid (option-ref options 'uuid #f)]
+	[disk-only (option-ref options 'disk-only #f)]
+  	[memory-size (option-ref options 'memory-size "1024M")]
+  	[disk-size (option-ref options 'disk-size "8192G")]
+	[disk-type (option-ref options 'disk-type "qcow2")]
+	[iso-path (option-ref options 'iso-path #f)]
+  	 )
+    (begin
+      (if help-wanted (begin (display "createvm --repo --name --memory-size --disk-size
+createvm --repo --name --disk-only --disk-size
+") (exit)))
+      (if version-wanted (begin (display "version 0.0.1\n") (exit) ))
+      (display repo )
+      (values repo (if uuid (string-append "vm-" uuid) name) uuid memory-size disk-size disk-type disk-only iso-path))
+    )
+)
+
+(define (main)
+  (let-values (((repo name uuid memory-size disk-size disk-type disk-only vmisopath)
+		 (parse-args)))
+    (createvm repo name uuid memory-size disk-size disk-type disk-only vmisopath) 
+    )
+  ;;   (setenv "WINDOWID" "0")
+  
+  ;;   (run (,@
+  ;; 	(zenity 
+  ;; 	 `((info) 
+  ;; 	   (text 
+  ;; 	    "Welcome Using Chaos Eternal's KVM creation utilities")
+  ;; 	   (title Welcome)))))
+
+  ;;   (receive 
+  ;; 		  (status p1 p2)
+  ;; 		  (run/collecting 
+  ;; 		   (1 2) 
+  ;; 		   (,@(zenity 
+  ;; 		       '((file-selection)
+  ;; 			 (title "Choose Repository")
+  ;; 			 (directory)
+  ;; 			 (text 
+  ;; 			  "Choose a directory to hold the repository")))))
+  ;; 		(if (> status 0)
+  ;; 		    (throw 'user-cancel)
+  ;; 		    (car (port->string-list p1))))
+
+  ;;   [receive (status p1)
+  ;;       (run/collecting 
+  ;;        (1 2)
+  ;;        (,@(zenity 
+  ;; 	   '((forms)
+  ;; 	     (title "Create Virtual Machine")
+  ;; 	     (text "Input the following Definitions")
+  ;; 	     (add-entry "VM Name")
+  ;; 	     (add-entry "Memory Size")
+  ;; 	     (add-entry "Disk Size")
+  ;; 	     (add-list "Disk Type")
+  ;; 	     (list-values "qcow2|raw")
+  ;; 	     (column-values "QCow2")
+  ;; 	     (separator "\n")))))
+  ;;     (if (> status 0)
+  ;; 	(throw 'user-cancel)
+  ;; 	(apply values (port->string-list p1)))]
+  
+
+  ;; 	   [receive (status p1)
+  ;; 	       (run/collecting
+  ;; 		(1 2)
+  ;; 		(,@(zenity
+  ;; 		    '((file-selection)
+  ;; 		      (title "Choose a boot iso image, \
+  ;; Cancel to create vm with out a boot iso")
+  ;; 		      ))))
+  ;; 	     (if (> status 0)
+  ;; 		 "/dev/null"
+  ;; 		 (values (car (port->string-list p1))))]
+  )
+
+(main)
