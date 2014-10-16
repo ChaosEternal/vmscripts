@@ -1,15 +1,122 @@
 #!/usr/bin/guile
 !#
 (use-modules (scsh syntax)
-	     (scsh glob))
+	     (scsh scsh)
+	     (scsh glob)
+	     (ice-9 match)
+	     (srfi srfi-8)
+	     (rnrs lists)
+	     (ice-9 match)
+	     (ice-9 getopt-long)
+	     (ice-9 pretty-print)
+	     (srfi srfi-11)
+	     (srfi srfi-1))
 (define REPO "/home/chaos/kVMs")
 
-(for-each (lambda (pidfile)
-	    (if (eq? 0 (run (fuser ,pidfile) (> 1 "/dev/null") (> 2 "/dev/null")))
-		(begin (display (string-append pidfile ": "))
-		       (run (cat ,pidfile)))))
-	  (glob* (string-append REPO "/*/kvm.pid")))
 
+(define (parse-args)
+  (define option-spec 
+    '((version (value #f))
+      (help (value #f))
+      (repo (single-char #\r) (value #t))
+      (name (single-char #\n) (value #t))
+      (uuid (single-char #\U) (value #t))
+      (mac (value #f))
+      (running (single-char #\R) (value #f))
+      ))
+
+  (define options (getopt-long (command-line) option-spec))
+  (let  ([help-wanted (option-ref options 'help #f)]
+  	[version-wanted (option-ref options 'version #f)]
+  	[repo (option-ref options 'repo (string-append (getenv "HOME") "/kVMs"))]
+  	[name (option-ref options 'name #f)]
+	[uuid (option-ref options 'uuid #f)]
+	[mac (option-ref options 'mac #f)]
+	[running (option-ref options 'running #f)]
+	
+  	 )
+    (begin
+      (if help-wanted (begin (display "lsvm [--repo REPO] --name [--mac]
+lsvm [--repo REPO] --uuid [--mac]
+lsvm --repo REPO --running
+") (exit)))
+      (if version-wanted (begin (display "version 0.0.1\n") (exit) ))
+
+      (values repo name uuid mac running))
+    )
+)
+
+
+(define (find-running repo)
+  (for-each (lambda (pidfile)
+	      (if (eq? 0 (run (fuser ,pidfile) (> 1 "/dev/null") (> 2 "/dev/null")))
+		  (begin (display (string-append pidfile ": "))
+			 (run (cat ,pidfile)))))
+	    (glob* (string-append repo "/*/kvm.pid"))))
+
+(define (extract-mac vmdef)
+  (match vmdef
+    [(_ *** ('net ('(nic) ('name "nic1") ('macaddr x) ...))) x]
+    [_ #f]
+    ))
+
+(define  (extract-vm-info vmdef res)
+  (if (null? vmdef) 
+      (cons 'virtual-machine res)
+      (match (car vmdef)
+	[('uuid u) (extract-vm-info (cdr vmdef) (cons (list 'uuid u) res))]
+	[('name n) (extract-vm-info (cdr vmdef) (cons (list 'name n) res))]
+	[('net (('nic) ('name nic-name) ('macaddr macaddr ) . _)) 
+	 (extract-vm-info (cdr vmdef) (cons (list 'net (list nic-name  macaddr)) res))]
+	[_ (extract-vm-info (cdr vmdef) res)]
+	))
+  
+  )
+
+(define (match-uuid-or-name x uuid name)
+  (define (predictor? x)
+    (match x
+      [('uuid ux) (equal? ux uuid)]
+      [('name uy) (equal? uy name)]
+      [_ #f])
+    )
+  (match x
+    [(_ *** (? predictor?)) #t]
+    [_ #f])
+  )
+
+(define (findvm repo name uuid mac)
+  (define all-vm-defs
+    (filter-map (lambda (file-name)
+		  (match (port->sexp-list (open-input-file file-name))
+		    [(_ *** ('define 'vmdef ('quote x) )) x]
+		    [_ #f]
+		    )		  
+		  )
+		(glob* (string-append repo "/*/startvm.scm"))
+		))
+  ;;
+  (match
+    (filter (lambda (x) (match-uuid-or-name x uuid name))
+	    (map (lambda (x) (extract-vm-info x '())) all-vm-defs )
+	    )
+    [(x . _) x]
+    [_ #f])
+    
+  )
+   
+  
+
+(define (main)
+  (let-values (((repo name uuid mac running)
+		 (parse-args)))
+    (if running 
+	(find-running repo)
+	(pretty-print
+	 (findvm repo name uuid mac))) 
+    ))
+
+(main)
 ;; #!/bin/bash
 ;; REPO=/home/chaos/kVMs
 ;; echo the following vm is running:
