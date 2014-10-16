@@ -56,7 +56,7 @@
       xvmdef
       )))
 
-(define (xvmdef hda-name macaddr memsize vmisopath vmuuid vmname)
+(define (xvmdef hda-name macaddr memsize vmisopath vmuuid vmname diskonly)
   "the trunk used to define vm parameters in generated startvm.scm"
   (let ((nicname (string-append "hst-nic-" vmname))
 	(cdrom (if vmisopath `((drive ((file ,vmisopath)
@@ -64,9 +64,10 @@
 					(if ide)
 					(media cdrom))))
 		   '()
-		   )))
+		   ))
+	(pc (if diskonly 'diskonly 'pc)))
    `(define vmdef
-      '((M pc)
+      '((M ,pc)
 	(cpu kvm64)
 	(name ,vmname)
 	(uuid ,vmuuid)
@@ -182,7 +183,7 @@
 	     (display guile-magic)
 	     (pretty-print (modulesuse))
 	     (pretty-print (xkvmf))
-	     (pretty-print (xvmdef hda-name macaddr memsize vmisopath vmuuid vmname))
+	     (pretty-print (xvmdef hda-name macaddr memsize vmisopath vmuuid vmname diskonly))
 	     (if (not diskonly)
 		 (pretty-print '(with-cwd 
 				 (dirname 

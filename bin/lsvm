@@ -23,6 +23,7 @@
       (uuid (single-char #\U) (value #t))
       (mac (value #f))
       (running (single-char #\R) (value #f))
+      (disk-only (value #f))
       ))
 
   (define options (getopt-long (command-line) option-spec))
@@ -33,16 +34,17 @@
 	[uuid (option-ref options 'uuid #f)]
 	[mac (option-ref options 'mac #f)]
 	[running (option-ref options 'running #f)]
+	[disk-only (option-ref options 'disk-only #f)]
 	
   	 )
     (begin
-      (if help-wanted (begin (display "lsvm [--repo REPO] --name [--mac]
-lsvm [--repo REPO] --uuid [--mac]
+      (if help-wanted (begin (display "lsvm [--repo REPO] --name [--mac] --disk-only
+lsvm [--repo REPO] --uuid [--mac] --disk-only
 lsvm --repo REPO --running
 ") (exit)))
       (if version-wanted (begin (display "version 0.0.1\n") (exit) ))
 
-      (values repo name uuid mac running))
+      (values repo name uuid mac running disk-only))
     )
 )
 
@@ -74,46 +76,66 @@ lsvm --repo REPO --running
   )
 
 (define (match-uuid-or-name x uuid name)
+
   (define (predictor? x)
     (match x
       [('uuid ux) (equal? ux uuid)]
       [('name uy) (equal? uy name)]
       [_ #f])
     )
-  (match x
-    [(_ *** (? predictor?)) #t]
-    [_ #f])
+  (if (or uuid name)
+      (match x
+	[(_ *** (? predictor?)) #t]
+	[_ #f])
+      (match x
+	[(_ *** ('uuid _)) #t]
+	[_ #f])
+      )
   )
 
-(define (findvm repo name uuid mac)
-  (define all-vm-defs
+(define (check-vm? x)
+  (match x
+    [(('M 'pc) . _) x]
+    [_ #f]
+    )
+  )
+
+
+(define (check-disk? x)
+  (match x
+    [(('M 'diskonly) . _) x]
+    [_ #f]
+    )
+  )
+
+(define (get-vm-defs repo vm-or-disk)
     (filter-map (lambda (file-name)
 		  (match (port->sexp-list (open-input-file file-name))
-		    [(_ *** ('define 'vmdef ('quote x) )) x]
+		    [(_ *** ('define 'vmdef ('quote x) )) (vm-or-disk x)]
 		    [_ #f]
 		    )		  
 		  )
 		(glob* (string-append repo "/*/startvm.scm"))
 		))
+  
+
+(define (findvm repo name uuid mac disk-only)
   ;;
-  (match
-    (filter (lambda (x) (match-uuid-or-name x uuid name))
-	    (map (lambda (x) (extract-vm-info x '())) all-vm-defs )
-	    )
-    [(x . _) x]
-    [_ #f])
-    
+  (define all-vm-defs (get-vm-defs repo (if disk-only check-disk? check-vm?)))
+  (filter (lambda (x) (match-uuid-or-name x uuid name))
+	  (map (lambda (x) (extract-vm-info x '())) all-vm-defs )
+	  )
   )
    
   
 
 (define (main)
-  (let-values (((repo name uuid mac running)
+  (let-values (((repo name uuid mac running disk-only)
 		 (parse-args)))
     (if running 
 	(find-running repo)
 	(pretty-print
-	 (findvm repo name uuid mac))) 
+	 (findvm repo name uuid mac disk-only))) 
     ))
 
 (main)
