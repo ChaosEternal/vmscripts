@@ -68,6 +68,7 @@
    `(define vmdef
       '((M pc)
 	(cpu kvm64)
+	(name ,vmname)
 	(uuid ,vmuuid)
 	(daemonize)
 	(pidfile "kvm.pid")
@@ -112,8 +113,7 @@
 
 	(usb)
 	(usbdevice tablet)
-	,@cdrom
-	)))
+	,@cdrom)))
   )
 
 
