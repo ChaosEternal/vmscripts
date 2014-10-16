@@ -238,59 +238,7 @@ createvm --repo --name --disk-only --disk-size
 		 (parse-args)))
     (createvm repo name uuid memory-size disk-size disk-type disk-only vmisopath) 
     )
-  ;;   (setenv "WINDOWID" "0")
-  
-  ;;   (run (,@
-  ;; 	(zenity 
-  ;; 	 `((info) 
-  ;; 	   (text 
-  ;; 	    "Welcome Using Chaos Eternal's KVM creation utilities")
-  ;; 	   (title Welcome)))))
 
-  ;;   (receive 
-  ;; 		  (status p1 p2)
-  ;; 		  (run/collecting 
-  ;; 		   (1 2) 
-  ;; 		   (,@(zenity 
-  ;; 		       '((file-selection)
-  ;; 			 (title "Choose Repository")
-  ;; 			 (directory)
-  ;; 			 (text 
-  ;; 			  "Choose a directory to hold the repository")))))
-  ;; 		(if (> status 0)
-  ;; 		    (throw 'user-cancel)
-  ;; 		    (car (port->string-list p1))))
-
-  ;;   [receive (status p1)
-  ;;       (run/collecting 
-  ;;        (1 2)
-  ;;        (,@(zenity 
-  ;; 	   '((forms)
-  ;; 	     (title "Create Virtual Machine")
-  ;; 	     (text "Input the following Definitions")
-  ;; 	     (add-entry "VM Name")
-  ;; 	     (add-entry "Memory Size")
-  ;; 	     (add-entry "Disk Size")
-  ;; 	     (add-list "Disk Type")
-  ;; 	     (list-values "qcow2|raw")
-  ;; 	     (column-values "QCow2")
-  ;; 	     (separator "\n")))))
-  ;;     (if (> status 0)
-  ;; 	(throw 'user-cancel)
-  ;; 	(apply values (port->string-list p1)))]
-  
-
-  ;; 	   [receive (status p1)
-  ;; 	       (run/collecting
-  ;; 		(1 2)
-  ;; 		(,@(zenity
-  ;; 		    '((file-selection)
-  ;; 		      (title "Choose a boot iso image, \
-  ;; Cancel to create vm with out a boot iso")
-  ;; 		      ))))
-  ;; 	     (if (> status 0)
-  ;; 		 "/dev/null"
-  ;; 		 (values (car (port->string-list p1))))]
   )
 
 (main)
