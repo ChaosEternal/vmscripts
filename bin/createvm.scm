@@ -81,6 +81,7 @@
 	      (helper /usr/lib/qemu/qemu-bridge-helper)
 	      ))
 	(net ((nic)
+	      (name "nic1")
 	      (macaddr ,macaddr)))
 	(m ,memsize)
 	(vnc "unix:vncsock,server")
