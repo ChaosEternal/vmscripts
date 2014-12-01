@@ -67,7 +67,7 @@
 		   ))
 	(pc (if diskonly 'diskonly 'pc)))
    `(define vmdef
-      '((M ,pc)
+      '((machine ((type ,pc) (accel kvm)))
 	(cpu kvm64)
 	(name ,vmname)
 	(uuid ,vmuuid)

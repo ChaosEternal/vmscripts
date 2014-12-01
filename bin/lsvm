@@ -95,7 +95,7 @@ lsvm --repo REPO --running
 
 (define (check-vm? x)
   (match x
-    [(('M 'pc) . _) x]
+    [(('machine (('type 'pc) _)) . _) x]
     [_ #f]
     )
   )
@@ -103,7 +103,7 @@ lsvm --repo REPO --running
 
 (define (check-disk? x)
   (match x
-    [(('M 'diskonly) . _) x]
+    [(('machine (('type 'diskonly) _)) . _) x]
     [_ #f]
     )
   )
