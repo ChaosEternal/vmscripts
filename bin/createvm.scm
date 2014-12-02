@@ -150,7 +150,7 @@
 		  (cons "00" 
 			(map 
 			 (lambda (x) 
-			   (format #f "~X" (random 255 ))) 
+			   (format #f "~X" (random 255 (random-state-from-platform)))) 
 			 (iota 5))) 
 		  ":")))
     (&& (test "!" -d ,repo)
