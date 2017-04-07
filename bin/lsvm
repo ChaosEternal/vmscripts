@@ -66,14 +66,10 @@ lsvm --repo REPO --running
   (if (null? vmdef) 
       (cons 'virtual-machine res)
       (match (car vmdef)
-	[('uuid u) (extract-vm-info (cdr vmdef) (cons (list 'uuid u) res))]
-	[('name n) (extract-vm-info (cdr vmdef) (cons (list 'name n) res))]
+	[((and x (or 'uuid 'name 'tags)) . t ) (extract-vm-info (cdr vmdef) (cons `(,x ,@t) res))]
 	[('net (('nic) ('name nic-name) ('macaddr macaddr ) . _)) 
 	 (extract-vm-info (cdr vmdef) (cons (list 'net (list nic-name  macaddr)) res))]
-	[_ (extract-vm-info (cdr vmdef) res)]
-	))
-  
-  )
+	[_ (extract-vm-info (cdr vmdef) res)])))
 
 (define (match-uuid-or-name x uuid name)
 
@@ -112,10 +108,11 @@ lsvm --repo REPO --running
     (filter-map (lambda (file-name)
 		  (match (port->sexp-list (open-input-file file-name))
 		    [(_ *** ('define 'vmdef ('quote x) )) (vm-or-disk x)]
+		    [(('vmdef . x) . _)  (vm-or-disk x)]
 		    [_ #f]
 		    )		  
 		  )
-		(glob* (string-append repo "/*/startvm.scm"))
+		(glob* (string-append repo "/*/vmdef.sexp"))
 		))
   
 
