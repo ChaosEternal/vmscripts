@@ -53,8 +53,7 @@
 		     (_
 		      (cons (format #f "~a" v) y))))))))
       '()
-      xvmdef
-      )))
+      xvmdef)))
 
 (define (xvmdef hda-name macaddr memsize vmisopath vmuuid vmname diskonly)
   "the trunk used to define vm parameters in generated startvm.scm"
