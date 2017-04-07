@@ -44,13 +44,34 @@
 
 (define (create-vm agent-id stemcell-id resource-pool networks)
   (begin 
-    (run (createvm --name ,agent-id))
-    (define vm-arg (car (run/sexp (lsvm --name ,agent-id))))
+    (run (createvm.scm --uuid ,agent-id))
+    (define vm-arg (car (run/sexp (lsvm --uuid ,agent-id))))
     (let* ([vm-name (match vm-arg [(_ *** ('name name)) name])]
 	   [vm-uuid (match vm-arg [(_ *** ('uuid uuid)) uuid])]
 	   [vm-mac (match vm-arg [(_ *** ('net ("nic1" mac))) mac])]
-	   [ip-count (string->number (car (run/list (wc -l (string-append REPO "/dhcp-host.lst")))))])
+	   [ip-count (string->number (car (run/list (wc -l ,(string-append REPO "/dhcp-host.lst")))))])
       
       ))
   
   )
+
+
+(define (load-vm-config uuid)
+  (define vm-list (run/sexp (lsvm --uuid ,uuid)))
+  (if (equal? vm-list '())
+      #f
+      (let* ([vm-arg (car vm-list)]
+	     [vm-name (match vm-arg [(_ *** ('name name)) name])]
+	     [vm-uuid (match vm-arg [(_ *** ('uuid uuid)) uuid])]
+	     [vm-mac (match vm-arg [(_ *** ('net ("nic1" mac))) mac])]
+	     [start-vm (run/sexps (cat ,(string-append REPO "/" vm-name "/startvm.scm")))]
+	     [vm-def (match start-vm ((_ *** ('define 'vmdef x)) x))])
+	(list vm-name vm-uuid vm-mac vm-def))))
+
+(define (vm-qmp-path vm-name)
+  (string-append REPO "/" vm-name "/qmpsock"))
+
+(define (has-vm? uuid)
+  (if (load-vm-config uuid)
+      #t
+      #f))
